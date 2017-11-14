@@ -1,4 +1,4 @@
-import connect from './connect';
+import connect from '../connect';
 import EthereumTx from 'ethereumjs-tx';
 import u2f from './u2f-api';
 import {timeout} from 'promise-timeout';
