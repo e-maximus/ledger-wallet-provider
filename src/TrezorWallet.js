@@ -1,19 +1,19 @@
-import connect from 'connect';
+import connect from './connect';
 import EthereumTx from 'ethereumjs-tx';
 import u2f from './u2f-api';
 import {timeout} from 'promise-timeout';
 if (window.u2f === undefined) window.u2f = u2f;
 
 const NOT_SUPPORTED_ERROR_MSG =
-    "LedgerWallet uses U2F which is not supported by your browser. " +
+    "TrezorWallet uses U2F which is not supported by your browser. " +
     "Use Chrome, Opera or Firefox with a U2F extension." +
     "Also make sure you're on an HTTPS connection";
 /**
- *  @class LedgerWallet
+ *  @class TrezorWallet
  *
  *
  *  Paths:
- *  Minimum Nano Ledger S accepts are:
+ *  Minimum Trezor accepts are:
  *
  *   * 44'/60'
  *   * 44'/61'
@@ -39,7 +39,7 @@ const NOT_SUPPORTED_ERROR_MSG =
  */
 const allowed_hd_paths = ["44'/60'", "44'/61'"];
 
-class LedgerWallet {
+class TrezorWallet {
 
     constructor(path) {
         path = path || allowed_hd_paths[0];
@@ -48,15 +48,13 @@ class LedgerWallet {
         this._path = path;
         this._accounts = null;
         this.isU2FSupported = null;
-        this.getAppConfig = this.getAppConfig.bind(this);
         this.getAccounts = this.getAccounts.bind(this);
         this.signTransaction = this.signTransaction.bind(this);
-        this._getLedgerConnection = this._getLedgerConnection.bind(this);
         this.connectionOpened = false;
     }
 
     async init() {
-        this.isU2FSupported = await LedgerWallet.isSupported();
+        this.isU2FSupported = await TrezorWallet.isSupported();
     }
 
     /**
@@ -83,34 +81,6 @@ class LedgerWallet {
     };
 
     /**
-     @typedef {function} failableCallback
-     @param error
-     @param result
-     */
-
-    /**
-     * Gets the version of installed ethereum app
-     * Check the isSupported() before calling that function
-     * otherwise it never returns
-     * @param {failableCallback} callback
-     * @param ttl - timeout
-     */
-    async getAppConfig(callback, ttl) {
-        if (!this.isU2FSupported) {
-            callback(new Error(NOT_SUPPORTED_ERROR_MSG));
-            return;
-        }
-        let eth = await this._getLedgerConnection();
-        let cleanupCallback = (error, data) => {
-            this._closeLedgerConnection(eth);
-            callback(error, data);
-        };
-        timeout(eth.getAppConfiguration_async(), ttl)
-            .then(config => cleanupCallback(null, config))
-            .catch(error => cleanupCallback(error))
-    }
-
-    /**
      * Gets a list of accounts from a device
      * @param {failableCallback} callback
      * @param askForOnDeviceConfirmation
@@ -125,7 +95,7 @@ class LedgerWallet {
             return;
         }
         const chainCode = false; // Include the chain code
-        TrezorConnect.ethereumGetAddress(path, function (response) {
+        TrezorConnect.ethereumGetAddress(this._path, function (response) {
         if (result.success) { // success
             this._accounts = [result.address.toLowerCase()];
             cleanupCallback(null, this._accounts);
@@ -194,4 +164,4 @@ class LedgerWallet {
     }
 }
 
-module.exports = LedgerWallet;
+module.exports = TrezorWallet;
