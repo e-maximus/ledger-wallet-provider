@@ -1,7 +1,9 @@
-import connect from '../connect';
+import TrezorConnect from '../connect';
 import EthereumTx from 'ethereumjs-tx';
-import u2f from './u2f-api';
+import u2f from '../u2f-api';
 import {timeout} from 'promise-timeout';
+const stripHexPrefix = require('strip-hex-prefix');
+const BigNumber = require('bignumber.js');
 if (window.u2f === undefined) window.u2f = u2f;
 
 const NOT_SUPPORTED_ERROR_MSG =
@@ -37,16 +39,22 @@ const NOT_SUPPORTED_ERROR_MSG =
  *  https://github.com/MetaMask/metamask-plugin/blob/master/app/scripts/keyrings/hd.js
  *
  */
-const allowed_hd_paths = ["44'/60'", "44'/61'"];
+var path = "m/44'/60'/0'";
+
+function stripAndPad (str) {
+    if(str !== undefined) {
+        const stripped = stripHexPrefix(str)
+        return stripped.length % 2 === 0 ? stripped : '0' + stripped
+    }
+    return null
+}
 
 class TrezorWallet {
 
-    constructor(path) {
-        path = path || allowed_hd_paths[0];
-        if (!allowed_hd_paths.some(hd_pref => path.startsWith(hd_pref)))
-            throw new Error(`hd derivation path for Nano Ledger S may only start [${allowed_hd_paths}], ${path} was provided`);
+    constructor(pat, web3instance) {
         this._path = path;
         this._accounts = null;
+	this._web3 = web3instance || web3;
         this.isU2FSupported = null;
         this.getAccounts = this.getAccounts.bind(this);
         this.signTransaction = this.signTransaction.bind(this);
@@ -64,19 +72,7 @@ class TrezorWallet {
      */
     static async isSupported() {
         return new Promise((resolve, reject) => {
-            if (window.u2f && !window.u2f.getApiVersion) {
-                // u2f object is found (Firefox with extension)
                 resolve(true);
-            } else {
-                // u2f object was not found. Using Google polyfill
-                const intervalId = setTimeout(() => {
-                    resolve(false);
-                }, 3000);
-                u2f.getApiVersion((version) => {
-                    clearTimeout(intervalId);
-                    resolve(true);
-                });
-            }
         });
     };
 
@@ -86,25 +82,25 @@ class TrezorWallet {
      * @param askForOnDeviceConfirmation
      */
     async getAccounts(callback, askForOnDeviceConfirmation = true) {
-        if (!this.isU2FSupported) {
-            callback(new Error(NOT_SUPPORTED_ERROR_MSG));
-            return;
-        }
+	console.log('get accounts called')
         if (this._accounts !== null) {
             callback(null, this._accounts);
             return;
         }
         const chainCode = false; // Include the chain code
-        TrezorConnect.ethereumGetAddress(this._path, function (response) {
-        if (result.success) { // success
-            this._accounts = [result.address.toLowerCase()];
-            cleanupCallback(null, this._accounts);
-            console.log('Address: ', result.address);
+	let cleanupCallback = (error, data) => {
+            callback(error, data);
+        };
+        TrezorConnect.TrezorConnect.ethereumGetAddress(this._path, function (response) {
+        if (response.success) { // success
+            this._accounts = ['0x' + response.address];
+            cleanupCallback(null, ['0x' + response.address]);
+            console.log('Address: ', response.address);
         } else {
-            cleanupCallback(result.error)
-            console.error('Error:', result.error); // error message
+            cleanupCallback(response.error)
+            console.error('Error:', response.error); // error message
         }
-        });	
+        }.bind(this));	
     }
 
     /**
@@ -113,54 +109,62 @@ class TrezorWallet {
      * @param {failableCallback} callback - callback
      */
     async signTransaction(txData, callback) {
-        if (!this.isU2FSupported) {
-            callback(new Error(NOT_SUPPORTED_ERROR_MSG));
-            return;
-        }
         // Encode using ethereumjs-tx
         let tx = new EthereumTx(txData);
 
         // Fetch the chain id
-        web3.version.getNetwork(async function (error, chain_id) {
+        this._web3.version.getNetwork(async function (error, chain_id) {
             if (error) callback(error);
 
             // Force chain_id to int
             chain_id = 0 | chain_id;
-
-         TrezorConnect.ethereumSignTx(
-            this._accounts[0],
-            txData.nonce,
-            txData.gasPrice,
-            txData.gasLimit,
-            txData.to,
-            txData.value,
-            txData.data,
+        let cleanupCallback = (error, data) => {
+            //this._closeLedgerConnection(eth);
+            callback(error, data);
+        };
+        console.log(txData);
+	console.log(stripAndPad(txData.nonce));	
+        console.log(stripAndPad(txData.gasPrice));
+        console.log(stripAndPad(txData.gas));
+        console.log(stripAndPad(txData.value));
+        console.log(stripAndPad(txData.to));
+         TrezorConnect.TrezorConnect.ethereumSignTx(
+            this._path,
+            stripAndPad(txData.nonce),
+            stripAndPad(txData.gasPrice),
+            stripAndPad(txData.gas),
+            stripAndPad(txData.to),
+            stripAndPad(txData.value),
+            stripAndPad(txData.data),
             chain_id,
             function (response) {
+             console.log(response);
              if (response.success) {
-                 console.log('Signature V (recovery parameter):', response.v); // number
+                 console.log('Signature V (recovery parameter):', new BigNumber(response.v).toString(16)); // number
                  console.log('Signature R component:', response.r); // bytes
                  console.log('Signature S component:', response.s); // bytes
                     // Store signature in transaction
-                    tx.v = new Buffer(response.v, "hex");
-                    tx.r = new Buffer(response.r, "hex");
-                    tx.s = new Buffer(response.s, "hex");
+                    tx.v = '0x' + new BigNumber(response.v).toString(16);
+                    tx.r = '0x' + response.r;
+                    tx.s = '0x' + response.s;
 
                     // EIP155: v should be chain_id * 2 + {35, 36}
                     const signed_chain_id = Math.floor((tx.v[0] - 35) / 2);
+		    console.log(signed_chain_id);
                     if (signed_chain_id !== chain_id) {
-                        cleanupCallback("Invalid signature received. Please update your Ledger Nano S.");
+                        //cleanupCallback("Invalid signature received. Please update your Ledger Nano S.");
                     }
 
                     // Return the signed raw transaction
                     const rawTx = "0x" + tx.serialize().toString("hex");
+		    console.log(rawTx);
                     cleanupCallback(undefined, rawTx);
              } else {
                  console.error('Error:', response.error); // error message
                  cleanupCallback(response.error)
              }
          });
-    });
+    }.bind(this));
     }
 }
 
