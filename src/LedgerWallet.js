@@ -1,6 +1,6 @@
 import ledger from 'ledgerco/src/index-browserify';
 import EthereumTx from 'ethereumjs-tx';
-import u2f from './u2f-api';
+import u2f from '../u2f-api';
 import {timeout} from 'promise-timeout';
 if (window.u2f === undefined) window.u2f = u2f;
 
