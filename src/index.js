@@ -2,7 +2,7 @@ import HookedWalletSubprovider from "web3-provider-engine/subproviders/hooked-wa
 import LedgerWallet from "./LedgerWallet";
 import TrezorWallet from "./TrezorWallet";
 
-export default async function (path_override, web3instancei, type) {
+export default async function (path_override, web3instance, type) {
     console.log('init hard wallet');
     let WalletSubprovider;
     if(type === 'ledger') {
